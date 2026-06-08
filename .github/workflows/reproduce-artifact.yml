@@ -1,0 +1,58 @@
+name: Build Artifact
+
+# Builds the `pnpm` npm package tarball from the current checkout and uploads it
+# as a workflow artifact. It does NOT publish anything and does NOT compare
+# against the public registry.
+#
+# Mirrors release.yml's build (pnpm install + the package's own prepublishOnly),
+# then packs pnpm/ — exactly what `pnpm publish --filter=pnpm` would upload.
+# Dependencies are installed from the committed lockfile (--frozen-lockfile).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.2.0
+        with:
+          standalone: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: pnpm install
+        # --force mirrors release.yml: it pulls every platform artifact of
+        # @reflink/reflink, which bundle.ts bundles into the published tarball.
+        run: pnpm install --frozen-lockfile --force
+
+      - name: Build the pnpm package tarball
+        run: |
+          set -euo pipefail
+          # prepublishOnly == `pnpm compile && publish-packed --prune --dest=dist`.
+          # It leaves pnpm/ in its publish-ready state (deps bundled into
+          # dist/node_modules, dependencies renamed to __dependencies). Packing
+          # pnpm/ reproduces what `pnpm publish --filter=pnpm` uploads.
+          pnpm --filter=pnpm run prepublishOnly
+          mkdir -p "$GITHUB_WORKSPACE/built"
+          cd pnpm
+          pnpm pack --pack-destination "$GITHUB_WORKSPACE/built"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-tarball
+          path: built/*.tgz
+          if-no-files-found: error
