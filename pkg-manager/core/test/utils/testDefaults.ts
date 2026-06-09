@@ -27,7 +27,12 @@ export function testDefaults<T> (
   const { storeController, storeDir, cacheDir } = createTempStore({
     ...opts,
     clientOptions: {
-      registries: opts?.registries,
+      // Only forward `registries` when the caller actually set it. Passing
+      // `registries: undefined` would otherwise spread over (and clobber) the
+      // `{ default: registry }` fallback in createTempStore, leaving the npm
+      // resolver with `registries === undefined` and crashing every test that
+      // doesn't override the registry.
+      ...(opts?.registries ? { registries: opts.registries } : {}),
       ...resolveOpts,
       ...fetchOpts,
     },
